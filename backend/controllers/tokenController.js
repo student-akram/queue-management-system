@@ -1,4 +1,5 @@
-const { sequelize, Queue, Token } = require("../models");
+const { sequelize, Queue, Token, } = require("../models");
+const{Op}=require("sequelize");
 
 // ========================================
 // ADD PERSON TO QUEUE
@@ -478,6 +479,117 @@ const completeToken = async (req, res) => {
   }
 };
 // ========================================
+// CANCEL TOKEN
+// PATCH /api/tokens/:tokenId/cancel
+// ========================================
+const cancelToken = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const { tokenId } = req.params;
+    const managerId = req.manager.managerId;
+
+    // Find token and lock it
+    const token = await Token.findByPk(tokenId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!token) {
+      await transaction.rollback();
+
+      return res.status(404).json({
+        message: "Token not found",
+      });
+    }
+
+    // Verify queue belongs to logged-in manager
+    const queue = await Queue.findOne({
+      where: {
+        id: token.queueId,
+        managerId,
+      },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!queue) {
+      await transaction.rollback();
+
+      return res.status(404).json({
+        message: "Queue not found",
+      });
+    }
+
+    // Only waiting tokens can be cancelled
+    if (token.status !== "WAITING") {
+      await transaction.rollback();
+
+      return res.status(400).json({
+        message: "Only waiting tokens can be cancelled",
+      });
+    }
+
+    const cancelledPosition = token.position;
+
+    // Mark token as cancelled
+    await token.update(
+      {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+      },
+      { transaction }
+    );
+
+    // Get remaining waiting tokens after the cancelled position
+    const remainingTokens = await Token.findAll({
+      where: {
+        queueId: queue.id,
+        status: "WAITING",
+        position: {
+          [Op.gt]: cancelledPosition,
+        },
+      },
+      order: [["position", "ASC"]],
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    // Shift remaining tokens one position up
+    for (const waitingToken of remainingTokens) {
+      await waitingToken.update(
+        {
+          position: waitingToken.position - 1,
+        },
+        { transaction }
+      );
+    }
+
+    await transaction.commit();
+
+    return res.status(200).json({
+      message: "Token cancelled successfully",
+      token: {
+        id: token.id,
+        tokenNumber: token.tokenNumber,
+        personName: token.personName,
+        status: token.status,
+        cancelledAt: token.cancelledAt,
+      },
+    });
+  } catch (error) {
+    if (!transaction.finished) {
+      await transaction.rollback();
+    }
+
+    console.error("Cancel token error:", error);
+
+    return res.status(500).json({
+      message: "Server error while cancelling token",
+    });
+  }
+};
+// ========================================
 // EXPORT CONTROLLER FUNCTIONS
 // ========================================
 module.exports = {
@@ -486,4 +598,5 @@ module.exports = {
   moveToken,
   callNextToken,
   completeToken,
+  cancelToken,
 };
