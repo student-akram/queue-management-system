@@ -7,6 +7,7 @@ const {
   createQueue,
   getQueues,
   getQueueById,
+  getQueueAnalytics,
 } = require("../controllers/queueController");
 
 const {
@@ -20,7 +21,9 @@ router.use(authMiddleware);
 
 router.post("/", createQueue);
 router.get("/", getQueues);
+router.get("/:queueId/analytics", getQueueAnalytics);
 router.get("/:id", getQueueById);
+
 
 router.post("/:queueId/tokens", addToken);
 router.get("/:queueId/tokens", getQueueTokens);
