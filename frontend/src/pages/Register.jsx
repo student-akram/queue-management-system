@@ -1,6 +1,15 @@
+
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import {
+  Activity,
+  ArrowRight,
+  LockKeyhole,
+  Mail,
+  UserRound,
+} from "lucide-react";
 import API from "../api/axios";
+import "./Auth.css";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -40,92 +49,132 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
-        <h1 className="text-3xl font-bold text-slate-800">
-          QueueFlow
-        </h1>
-
-        <p className="mt-2 text-slate-500">
-          Create your manager account
-        </p>
-
-        {error && (
-          <div className="mt-4 rounded-lg bg-red-100 p-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Full name
-            </label>
-
-            <input
-              type="text"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              placeholder="Manager name"
-              required
-              className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-blue-500"
-            />
+    <main className="auth-page">
+      <div className="auth-layout">
+        <section className="auth-brand-panel">
+          <div className="auth-brand">
+            <div className="auth-brand-icon">
+              <Activity size={24} />
+            </div>
+            <span>QueueFlow</span>
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Email
-            </label>
-
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              placeholder="manager@example.com"
-              required
-              className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-blue-500"
-            />
+          <div className="auth-brand-content">
+            <span className="auth-overline">GET STARTED</span>
+            <h1>
+              Your queue.
+              <br />
+              <span>Your control.</span>
+            </h1>
+            <p>
+              Create your manager account and start organizing your service
+              operations with QueueFlow.
+            </p>
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Password
-            </label>
-
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="Minimum 6 characters"
-              minLength={6}
-              required
-              className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-blue-500"
-            />
+          <div className="auth-brand-footer">
+            <span className="auth-footer-dot" />
+            Organized service. Better experience.
           </div>
+        </section>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {loading ? "Creating account..." : "Register"}
-          </button>
-        </form>
+        <section className="auth-form-panel">
+          <div className="auth-form-card">
+            <div className="auth-mobile-brand">
+              <div className="auth-brand-icon">
+                <Activity size={22} />
+              </div>
+              <span>QueueFlow</span>
+            </div>
 
-        <p className="mt-6 text-center text-sm text-slate-600">
-          Already registered?{" "}
-          <Link
-            to="/login"
-            className="font-semibold text-blue-600 hover:underline"
-          >
-            Login
-          </Link>
-        </p>
+            <div className="auth-heading">
+              <span className="auth-eyebrow">CREATE YOUR ACCOUNT</span>
+              <h2>Manager registration</h2>
+              <p>Enter your details to set up your account.</p>
+            </div>
+
+            {error && (
+              <div className="auth-error" role="alert">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="auth-form">
+              <div className="auth-field">
+                <label htmlFor="register-name">Full name</label>
+                <div className="auth-input-wrap">
+                  <UserRound size={18} />
+                  <input
+                    id="register-name"
+                    type="text"
+                    name="name"
+                    value={formData.name}
+                    onChange={handleChange}
+                    placeholder="Enter your full name"
+                    autoComplete="name"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="auth-field">
+                <label htmlFor="register-email">Email address</label>
+                <div className="auth-input-wrap">
+                  <Mail size={18} />
+                  <input
+                    id="register-email"
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="manager@example.com"
+                    autoComplete="email"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="auth-field">
+                <label htmlFor="register-password">Password</label>
+                <div className="auth-input-wrap">
+                  <LockKeyhole size={18} />
+                  <input
+                    id="register-password"
+                    type="password"
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="Minimum 6 characters"
+                    minLength={6}
+                    autoComplete="new-password"
+                    required
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="auth-submit"
+              >
+                <span>{loading ? "Creating account..." : "Create account"}</span>
+                {!loading && <ArrowRight size={18} />}
+              </button>
+            </form>
+
+            <p className="auth-switch">
+              Already registered?{" "}
+              <Link to="/login">Login</Link>
+            </p>
+
+            <div className="auth-security-note">
+              <LockKeyhole size={14} />
+              <span>Your account is securely protected.</span>
+            </div>
+          </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 };
 

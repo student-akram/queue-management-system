@@ -1,6 +1,9 @@
+
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Activity, ArrowRight, LockKeyhole, Mail } from "lucide-react";
 import API from "../api/axios";
+import "./Auth.css";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -45,75 +48,114 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg">
-        <h1 className="text-3xl font-bold text-slate-800">
-          QueueFlow
-        </h1>
-
-        <p className="mt-2 text-slate-500">
-          Manager login
-        </p>
-
-        {error && (
-          <div className="mt-4 rounded-lg bg-red-100 p-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Email
-            </label>
-
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              placeholder="manager@example.com"
-              required
-              className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-blue-500"
-            />
+    <main className="auth-page">
+      <div className="auth-layout">
+        <section className="auth-brand-panel">
+          <div className="auth-brand">
+            <div className="auth-brand-icon">
+              <Activity size={24} />
+            </div>
+            <span>QueueFlow</span>
           </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Password
-            </label>
-
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="Enter your password"
-              required
-              className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:border-blue-500"
-            />
+          <div className="auth-brand-content">
+            <span className="auth-overline">QUEUE MANAGEMENT SYSTEM</span>
+            <h1>
+              Make every
+              <br />
+              <span>minute count.</span>
+            </h1>
+            <p>
+              A simpler way to organize queues, manage service flow, and keep
+              your customers moving.
+            </p>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {loading ? "Logging in..." : "Login"}
-          </button>
-        </form>
+          <div className="auth-brand-footer">
+            <span className="auth-footer-dot" />
+            Organized service. Better experience.
+          </div>
+        </section>
 
-        <p className="mt-6 text-center text-sm text-slate-600">
-          Don't have an account?{" "}
-          <Link
-            to="/register"
-            className="font-semibold text-blue-600 hover:underline"
-          >
-            Register
-          </Link>
-        </p>
+        <section className="auth-form-panel">
+          <div className="auth-form-card">
+            <div className="auth-mobile-brand">
+              <div className="auth-brand-icon">
+                <Activity size={22} />
+              </div>
+              <span>QueueFlow</span>
+            </div>
+
+            <div className="auth-heading">
+              <span className="auth-eyebrow">WELCOME BACK</span>
+              <h2>Manager login</h2>
+              <p>Enter your account details to continue.</p>
+            </div>
+
+            {error && (
+              <div className="auth-error" role="alert">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="auth-form">
+              <div className="auth-field">
+                <label htmlFor="login-email">Email address</label>
+                <div className="auth-input-wrap">
+                  <Mail size={18} />
+                  <input
+                    id="login-email"
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="manager@example.com"
+                    autoComplete="email"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="auth-field">
+                <label htmlFor="login-password">Password</label>
+                <div className="auth-input-wrap">
+                  <LockKeyhole size={18} />
+                  <input
+                    id="login-password"
+                    type="password"
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    placeholder="Enter your password"
+                    autoComplete="current-password"
+                    required
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="auth-submit"
+              >
+                <span>{loading ? "Logging in..." : "Login to dashboard"}</span>
+                {!loading && <ArrowRight size={18} />}
+              </button>
+            </form>
+
+            <p className="auth-switch">
+              Don’t have an account?{" "}
+              <Link to="/register">Create account</Link>
+            </p>
+
+            <div className="auth-security-note">
+              <LockKeyhole size={14} />
+              <span>Your account is securely protected.</span>
+            </div>
+          </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 };
 
