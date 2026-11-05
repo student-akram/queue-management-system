@@ -1,10 +1,48 @@
-const { sequelize, Queue, Token, } = require("../models");
-const{Op}=require("sequelize");
+const { sequelize, Queue, Token } = require("../models");
+const { Op } = require("sequelize");
 
-// ========================================
+// =====================================================
+// HELPER: Normalize waiting token positions
+// Waiting tokens will always have positions 1, 2, 3...
+// =====================================================
+const normalizeWaitingPositions = async (queueId, transaction) => {
+  const waitingTokens = await Token.findAll({
+    where: {
+      queueId,
+      status: "WAITING",
+    },
+    order: [
+      ["position", "ASC"],
+      ["createdAt", "ASC"],
+      ["id", "ASC"],
+    ],
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+
+  // First move them to temporary unique negative positions
+  for (let i = 0; i < waitingTokens.length; i++) {
+    await waitingTokens[i].update(
+      { position: -(100000 + i) },
+      { transaction }
+    );
+  }
+
+  // Then assign proper positions: 1, 2, 3...
+  for (let i = 0; i < waitingTokens.length; i++) {
+    await waitingTokens[i].update(
+      { position: i + 1 },
+      { transaction }
+    );
+  }
+
+  return waitingTokens;
+};
+
+// =====================================================
 // ADD PERSON TO QUEUE
 // POST /api/queues/:queueId/tokens
-// ========================================
+// =====================================================
 const addToken = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -13,7 +51,6 @@ const addToken = async (req, res) => {
     const { queueId } = req.params;
     const managerId = req.manager.managerId;
 
-    // Validate person name
     if (!personName || !personName.trim()) {
       await transaction.rollback();
 
@@ -22,7 +59,6 @@ const addToken = async (req, res) => {
       });
     }
 
-    // Find queue owned by this manager and lock it
     const queue = await Queue.findOne({
       where: {
         id: queueId,
@@ -40,11 +76,7 @@ const addToken = async (req, res) => {
       });
     }
 
-    // Generate token number
-    const number = queue.nextTokenNumber;
-    const tokenNumber = `T${String(number).padStart(3, "0")}`;
-
-    // Get current waiting count
+    // Repair existing waiting positions before adding a new token
     const waitingCount = await Token.count({
       where: {
         queueId: queue.id,
@@ -53,7 +85,9 @@ const addToken = async (req, res) => {
       transaction,
     });
 
-    // Create token
+    const number = queue.nextTokenNumber;
+    const tokenNumber = `T${String(number).padStart(3, "0")}`;
+
     const token = await Token.create(
       {
         tokenNumber,
@@ -65,7 +99,6 @@ const addToken = async (req, res) => {
       { transaction }
     );
 
-    // Increment next token number
     await queue.update(
       {
         nextTokenNumber: number + 1,
@@ -92,16 +125,15 @@ const addToken = async (req, res) => {
   }
 };
 
-// ========================================
+// =====================================================
 // GET ALL TOKENS FOR A QUEUE
 // GET /api/queues/:queueId/tokens
-// ========================================
+// =====================================================
 const getQueueTokens = async (req, res) => {
   try {
     const { queueId } = req.params;
     const managerId = req.manager.managerId;
 
-    // Check that queue belongs to logged-in manager
     const queue = await Queue.findOne({
       where: {
         id: queueId,
@@ -115,12 +147,15 @@ const getQueueTokens = async (req, res) => {
       });
     }
 
-    // Fetch tokens in position order
     const tokens = await Token.findAll({
       where: {
         queueId: queue.id,
       },
-      order: [["position", "ASC"]],
+      order: [
+        ["position", "ASC"],
+        ["createdAt", "ASC"],
+        ["id", "ASC"],
+      ],
       attributes: [
         "id",
         "tokenNumber",
@@ -135,26 +170,22 @@ const getQueueTokens = async (req, res) => {
     });
 
     return res.status(200).json({
-      message: "Queue tokens fetched successfully",
-      queue: {
-        id: queue.id,
-        name: queue.name,
-      },
-      totalTokens: tokens.length,
+      queueId: queue.id,
       tokens,
     });
   } catch (error) {
     console.error("Get queue tokens error:", error);
 
     return res.status(500).json({
-      message: "Server error while fetching queue tokens",
+      message: "Unable to fetch queue tokens",
     });
   }
 };
-// ========================================
+
+// =====================================================
 // MOVE TOKEN UP OR DOWN
 // PATCH /api/tokens/:tokenId/move
-// ========================================
+// =====================================================
 const moveToken = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -163,7 +194,6 @@ const moveToken = async (req, res) => {
     const { direction } = req.body;
     const managerId = req.manager.managerId;
 
-    // Validate direction
     if (!["up", "down"].includes(direction)) {
       await transaction.rollback();
 
@@ -172,7 +202,7 @@ const moveToken = async (req, res) => {
       });
     }
 
-    // Find token and its queue
+    // Find token
     const token = await Token.findByPk(tokenId, {
       transaction,
       lock: transaction.LOCK.UPDATE,
@@ -186,13 +216,14 @@ const moveToken = async (req, res) => {
       });
     }
 
-    // Verify queue belongs to logged-in manager
+    // Verify queue ownership
     const queue = await Queue.findOne({
       where: {
         id: token.queueId,
         managerId,
       },
       transaction,
+      lock: transaction.LOCK.UPDATE,
     });
 
     if (!queue) {
@@ -203,7 +234,6 @@ const moveToken = async (req, res) => {
       });
     }
 
-    // Only waiting tokens can be moved
     if (token.status !== "WAITING") {
       await transaction.rollback();
 
@@ -212,10 +242,13 @@ const moveToken = async (req, res) => {
       });
     }
 
-    // Get all waiting tokens in their current order
+    // Repair invalid positions such as -1 before moving
+    await normalizeWaitingPositions(queue.id, transaction);
+
+    // Fetch waiting tokens in their corrected order
     const waitingTokens = await Token.findAll({
       where: {
-        queueId: token.queueId,
+        queueId: queue.id,
         status: "WAITING",
       },
       order: [["position", "ASC"]],
@@ -224,14 +257,22 @@ const moveToken = async (req, res) => {
     });
 
     const currentIndex = waitingTokens.findIndex(
-      (item) => item.id === token.id
+      (item) => Number(item.id) === Number(token.id)
     );
 
-    // Determine adjacent token index
-    const targetIndex =
-      direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (currentIndex === -1) {
+      await transaction.rollback();
 
-    // Prevent moving beyond queue boundaries
+      return res.status(404).json({
+        message: "Waiting token not found in queue",
+      });
+    }
+
+    const targetIndex =
+      direction === "up"
+        ? currentIndex - 1
+        : currentIndex + 1;
+
     if (targetIndex < 0 || targetIndex >= waitingTokens.length) {
       await transaction.rollback();
 
@@ -243,36 +284,44 @@ const moveToken = async (req, res) => {
       });
     }
 
+    const currentToken = waitingTokens[currentIndex];
     const adjacentToken = waitingTokens[targetIndex];
 
-    // Swap positions using a temporary position to avoid collisions
-    const temporaryPosition = -1;
+    // IMPORTANT: Store original positions before updating
+    const currentPosition = Number(currentToken.position);
+    const adjacentPosition = Number(adjacentToken.position);
 
-    await token.update(
+    // Use a temporary position that cannot conflict with existing positions
+    const temporaryPosition = -999999;
+
+    await currentToken.update(
       { position: temporaryPosition },
       { transaction }
     );
 
     await adjacentToken.update(
-      { position: token.position },
+      { position: currentPosition },
       { transaction }
     );
 
-    await token.update(
-      { position: adjacentToken.position },
+    await currentToken.update(
+      { position: adjacentPosition },
       { transaction }
     );
+
+    // Ensure all waiting positions are sequential
+    await normalizeWaitingPositions(queue.id, transaction);
 
     await transaction.commit();
 
     return res.status(200).json({
       message: `Token moved ${direction} successfully`,
       token: {
-        id: token.id,
-        tokenNumber: token.tokenNumber,
-        personName: token.personName,
-        position: token.position,
-        status: token.status,
+        id: currentToken.id,
+        tokenNumber: currentToken.tokenNumber,
+        personName: currentToken.personName,
+        position: currentToken.position,
+        status: currentToken.status,
       },
     });
   } catch (error) {
@@ -284,13 +333,15 @@ const moveToken = async (req, res) => {
 
     return res.status(500).json({
       message: "Server error while moving token",
+      error: error.message,
     });
   }
 };
-// ========================================
+
+// =====================================================
 // CALL NEXT TOKEN
 // POST /api/queues/:queueId/call-next
-// ========================================
+// =====================================================
 const callNextToken = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -298,7 +349,6 @@ const callNextToken = async (req, res) => {
     const { queueId } = req.params;
     const managerId = req.manager.managerId;
 
-    // Find queue owned by this manager and lock it
     const queue = await Queue.findOne({
       where: {
         id: queueId,
@@ -316,7 +366,6 @@ const callNextToken = async (req, res) => {
       });
     }
 
-    // Check if another token is already being served
     const servingToken = await Token.findOne({
       where: {
         queueId: queue.id,
@@ -330,7 +379,8 @@ const callNextToken = async (req, res) => {
       await transaction.rollback();
 
       return res.status(400).json({
-        message: "Complete the current serving token before calling the next person",
+        message:
+          "Complete the current serving token before calling the next person",
         servingToken: {
           id: servingToken.id,
           tokenNumber: servingToken.tokenNumber,
@@ -339,7 +389,9 @@ const callNextToken = async (req, res) => {
       });
     }
 
-    // Find the first waiting token
+    // Repair positions before selecting the next token
+    await normalizeWaitingPositions(queue.id, transaction);
+
     const nextToken = await Token.findOne({
       where: {
         queueId: queue.id,
@@ -358,7 +410,6 @@ const callNextToken = async (req, res) => {
       });
     }
 
-    // Mark token as serving
     await nextToken.update(
       {
         status: "SERVING",
@@ -366,6 +417,9 @@ const callNextToken = async (req, res) => {
       },
       { transaction }
     );
+
+    // Normalize remaining waiting tokens
+    await normalizeWaitingPositions(queue.id, transaction);
 
     await transaction.commit();
 
@@ -393,10 +447,10 @@ const callNextToken = async (req, res) => {
   }
 };
 
-// ========================================
+// =====================================================
 // COMPLETE SERVICE
 // PATCH /api/tokens/:tokenId/complete
-// ========================================
+// =====================================================
 const completeToken = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -404,7 +458,6 @@ const completeToken = async (req, res) => {
     const { tokenId } = req.params;
     const managerId = req.manager.managerId;
 
-    // Find token and lock it
     const token = await Token.findByPk(tokenId, {
       transaction,
       lock: transaction.LOCK.UPDATE,
@@ -418,7 +471,6 @@ const completeToken = async (req, res) => {
       });
     }
 
-    // Verify queue ownership
     const queue = await Queue.findOne({
       where: {
         id: token.queueId,
@@ -435,7 +487,6 @@ const completeToken = async (req, res) => {
       });
     }
 
-    // Only serving tokens can be completed
     if (token.status !== "SERVING") {
       await transaction.rollback();
 
@@ -444,7 +495,6 @@ const completeToken = async (req, res) => {
       });
     }
 
-    // Mark service as completed
     await token.update(
       {
         status: "COMPLETED",
@@ -478,10 +528,11 @@ const completeToken = async (req, res) => {
     });
   }
 };
-// ========================================
+
+// =====================================================
 // CANCEL TOKEN
 // PATCH /api/tokens/:tokenId/cancel
-// ========================================
+// =====================================================
 const cancelToken = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -489,7 +540,6 @@ const cancelToken = async (req, res) => {
     const { tokenId } = req.params;
     const managerId = req.manager.managerId;
 
-    // Find token and lock it
     const token = await Token.findByPk(tokenId, {
       transaction,
       lock: transaction.LOCK.UPDATE,
@@ -503,7 +553,6 @@ const cancelToken = async (req, res) => {
       });
     }
 
-    // Verify queue belongs to logged-in manager
     const queue = await Queue.findOne({
       where: {
         id: token.queueId,
@@ -521,7 +570,6 @@ const cancelToken = async (req, res) => {
       });
     }
 
-    // Only waiting tokens can be cancelled
     if (token.status !== "WAITING") {
       await transaction.rollback();
 
@@ -530,9 +578,6 @@ const cancelToken = async (req, res) => {
       });
     }
 
-    const cancelledPosition = token.position;
-
-    // Mark token as cancelled
     await token.update(
       {
         status: "CANCELLED",
@@ -541,29 +586,8 @@ const cancelToken = async (req, res) => {
       { transaction }
     );
 
-    // Get remaining waiting tokens after the cancelled position
-    const remainingTokens = await Token.findAll({
-      where: {
-        queueId: queue.id,
-        status: "WAITING",
-        position: {
-          [Op.gt]: cancelledPosition,
-        },
-      },
-      order: [["position", "ASC"]],
-      transaction,
-      lock: transaction.LOCK.UPDATE,
-    });
-
-    // Shift remaining tokens one position up
-    for (const waitingToken of remainingTokens) {
-      await waitingToken.update(
-        {
-          position: waitingToken.position - 1,
-        },
-        { transaction }
-      );
-    }
+    // Normalize remaining waiting tokens
+    await normalizeWaitingPositions(queue.id, transaction);
 
     await transaction.commit();
 
@@ -589,9 +613,10 @@ const cancelToken = async (req, res) => {
     });
   }
 };
-// ========================================
+
+// =====================================================
 // EXPORT CONTROLLER FUNCTIONS
-// ========================================
+// =====================================================
 module.exports = {
   addToken,
   getQueueTokens,
