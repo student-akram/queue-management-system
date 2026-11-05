@@ -287,10 +287,203 @@ const moveToken = async (req, res) => {
   }
 };
 // ========================================
+// CALL NEXT TOKEN
+// POST /api/queues/:queueId/call-next
+// ========================================
+const callNextToken = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const { queueId } = req.params;
+    const managerId = req.manager.managerId;
+
+    // Find queue owned by this manager and lock it
+    const queue = await Queue.findOne({
+      where: {
+        id: queueId,
+        managerId,
+      },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!queue) {
+      await transaction.rollback();
+
+      return res.status(404).json({
+        message: "Queue not found",
+      });
+    }
+
+    // Check if another token is already being served
+    const servingToken = await Token.findOne({
+      where: {
+        queueId: queue.id,
+        status: "SERVING",
+      },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (servingToken) {
+      await transaction.rollback();
+
+      return res.status(400).json({
+        message: "Complete the current serving token before calling the next person",
+        servingToken: {
+          id: servingToken.id,
+          tokenNumber: servingToken.tokenNumber,
+          personName: servingToken.personName,
+        },
+      });
+    }
+
+    // Find the first waiting token
+    const nextToken = await Token.findOne({
+      where: {
+        queueId: queue.id,
+        status: "WAITING",
+      },
+      order: [["position", "ASC"]],
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!nextToken) {
+      await transaction.rollback();
+
+      return res.status(404).json({
+        message: "No waiting tokens in this queue",
+      });
+    }
+
+    // Mark token as serving
+    await nextToken.update(
+      {
+        status: "SERVING",
+        serviceStartedAt: new Date(),
+      },
+      { transaction }
+    );
+
+    await transaction.commit();
+
+    return res.status(200).json({
+      message: "Next token called successfully",
+      token: {
+        id: nextToken.id,
+        tokenNumber: nextToken.tokenNumber,
+        personName: nextToken.personName,
+        position: nextToken.position,
+        status: nextToken.status,
+        serviceStartedAt: nextToken.serviceStartedAt,
+      },
+    });
+  } catch (error) {
+    if (!transaction.finished) {
+      await transaction.rollback();
+    }
+
+    console.error("Call next token error:", error);
+
+    return res.status(500).json({
+      message: "Server error while calling next token",
+    });
+  }
+};
+
+// ========================================
+// COMPLETE SERVICE
+// PATCH /api/tokens/:tokenId/complete
+// ========================================
+const completeToken = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const { tokenId } = req.params;
+    const managerId = req.manager.managerId;
+
+    // Find token and lock it
+    const token = await Token.findByPk(tokenId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+
+    if (!token) {
+      await transaction.rollback();
+
+      return res.status(404).json({
+        message: "Token not found",
+      });
+    }
+
+    // Verify queue ownership
+    const queue = await Queue.findOne({
+      where: {
+        id: token.queueId,
+        managerId,
+      },
+      transaction,
+    });
+
+    if (!queue) {
+      await transaction.rollback();
+
+      return res.status(404).json({
+        message: "Queue not found",
+      });
+    }
+
+    // Only serving tokens can be completed
+    if (token.status !== "SERVING") {
+      await transaction.rollback();
+
+      return res.status(400).json({
+        message: "Only a serving token can be completed",
+      });
+    }
+
+    // Mark service as completed
+    await token.update(
+      {
+        status: "COMPLETED",
+        serviceCompletedAt: new Date(),
+      },
+      { transaction }
+    );
+
+    await transaction.commit();
+
+    return res.status(200).json({
+      message: "Service completed successfully",
+      token: {
+        id: token.id,
+        tokenNumber: token.tokenNumber,
+        personName: token.personName,
+        status: token.status,
+        serviceStartedAt: token.serviceStartedAt,
+        serviceCompletedAt: token.serviceCompletedAt,
+      },
+    });
+  } catch (error) {
+    if (!transaction.finished) {
+      await transaction.rollback();
+    }
+
+    console.error("Complete token error:", error);
+
+    return res.status(500).json({
+      message: "Server error while completing service",
+    });
+  }
+};
+// ========================================
 // EXPORT CONTROLLER FUNCTIONS
 // ========================================
 module.exports = {
   addToken,
   getQueueTokens,
   moveToken,
+  callNextToken,
+  completeToken,
 };

@@ -12,18 +12,18 @@ const {
 const {
   addToken,
   getQueueTokens,
+  callNextToken
 } = require("../controllers/tokenController");
 
 // All queue routes require manager authentication
 router.use(authMiddleware);
 
-// Queue APIs
 router.post("/", createQueue);
 router.get("/", getQueues);
 router.get("/:id", getQueueById);
 
-// Token APIs
 router.post("/:queueId/tokens", addToken);
 router.get("/:queueId/tokens", getQueueTokens);
+router.post("/:queueId/call-next", callNextToken);
 
 module.exports = router;
