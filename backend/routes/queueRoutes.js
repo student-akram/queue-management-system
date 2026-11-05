@@ -9,16 +9,21 @@ const {
   getQueueById,
 } = require("../controllers/queueController");
 
-const { addToken } = require("../controllers/tokenController");
+const {
+  addToken,
+  getQueueTokens,
+} = require("../controllers/tokenController");
 
-// All queue routes require authentication
+// All queue routes require manager authentication
 router.use(authMiddleware);
 
+// Queue APIs
 router.post("/", createQueue);
 router.get("/", getQueues);
 router.get("/:id", getQueueById);
 
-// Add a person to a specific queue
+// Token APIs
 router.post("/:queueId/tokens", addToken);
+router.get("/:queueId/tokens", getQueueTokens);
 
 module.exports = router;

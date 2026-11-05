@@ -1,6 +1,9 @@
 const { sequelize, Queue, Token } = require("../models");
 
+// ========================================
 // ADD PERSON TO QUEUE
+// POST /api/queues/:queueId/tokens
+// ========================================
 const addToken = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -9,6 +12,7 @@ const addToken = async (req, res) => {
     const { queueId } = req.params;
     const managerId = req.manager.managerId;
 
+    // Validate person name
     if (!personName || !personName.trim()) {
       await transaction.rollback();
 
@@ -39,7 +43,7 @@ const addToken = async (req, res) => {
     const number = queue.nextTokenNumber;
     const tokenNumber = `T${String(number).padStart(3, "0")}`;
 
-    // Get current waiting count for position
+    // Get current waiting count
     const waitingCount = await Token.count({
       where: {
         queueId: queue.id,
@@ -75,7 +79,9 @@ const addToken = async (req, res) => {
       token,
     });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) {
+      await transaction.rollback();
+    }
 
     console.error("Add token error:", error);
 
@@ -85,6 +91,70 @@ const addToken = async (req, res) => {
   }
 };
 
+// ========================================
+// GET ALL TOKENS FOR A QUEUE
+// GET /api/queues/:queueId/tokens
+// ========================================
+const getQueueTokens = async (req, res) => {
+  try {
+    const { queueId } = req.params;
+    const managerId = req.manager.managerId;
+
+    // Check that queue belongs to logged-in manager
+    const queue = await Queue.findOne({
+      where: {
+        id: queueId,
+        managerId,
+      },
+    });
+
+    if (!queue) {
+      return res.status(404).json({
+        message: "Queue not found",
+      });
+    }
+
+    // Fetch tokens in position order
+    const tokens = await Token.findAll({
+      where: {
+        queueId: queue.id,
+      },
+      order: [["position", "ASC"]],
+      attributes: [
+        "id",
+        "tokenNumber",
+        "personName",
+        "position",
+        "status",
+        "createdAt",
+        "serviceStartedAt",
+        "serviceCompletedAt",
+        "cancelledAt",
+      ],
+    });
+
+    return res.status(200).json({
+      message: "Queue tokens fetched successfully",
+      queue: {
+        id: queue.id,
+        name: queue.name,
+      },
+      totalTokens: tokens.length,
+      tokens,
+    });
+  } catch (error) {
+    console.error("Get queue tokens error:", error);
+
+    return res.status(500).json({
+      message: "Server error while fetching queue tokens",
+    });
+  }
+};
+
+// ========================================
+// EXPORT CONTROLLER FUNCTIONS
+// ========================================
 module.exports = {
   addToken,
+  getQueueTokens,
 };
